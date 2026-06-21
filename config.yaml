@@ -1,0 +1,30 @@
+server:
+  port: 8000
+  host: "0.0.0.0"
+
+upstream:
+  url: "http://localhost:1234"
+  timeout_seconds: 300
+
+normalization:
+  enabled: true
+  strip_fields:
+    - timestamp
+    - finish_reason
+    - logprobs
+    - created
+  normalize_whitespace: true
+  normalize_tool_calls: true
+  normalize_reasoning_fields: true
+
+tracking:
+  enabled: true
+  cache_hit_threshold: 0.3
+  cache_miss_threshold: 0.7
+  calibration_requests: 5
+  data_dir: "./data"
+
+logging:
+  level: "info"
+  file: "./data/kvbridge.log"
+  console: true
