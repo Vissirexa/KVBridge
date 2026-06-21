@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -67,5 +67,7 @@ class SessionMetrics:
     hit_rate: float = 0.0
     avg_ttft_hit_ms: float = 0.0
     avg_ttft_miss_ms: float = 0.0
-    last_request_time: datetime = field(default_factory=datetime.utcnow)
+    last_request_time: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     estimated_cache_status: str = "cold"  # "hot", "cold", "evicted"

@@ -1,7 +1,7 @@
 """Tests for kvbridge.session — session identification and lifecycle."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -177,7 +177,7 @@ class TestIdentifySession:
 
 class TestClassifySessionAge:
     def _ago(self, **kwargs) -> datetime:
-        return datetime.utcnow() - timedelta(**kwargs)
+        return datetime.now(timezone.utc) - timedelta(**kwargs)
 
     def test_just_made_is_active(self):
         assert classify_session_age(self._ago(seconds=30)) == "active"
@@ -205,7 +205,7 @@ class TestClassifySessionAge:
         assert classify_session_age(self._ago(days=30)) == "stale"
 
     def test_just_now_is_active(self):
-        assert classify_session_age(datetime.utcnow()) == "active"
+        assert classify_session_age(datetime.now(timezone.utc)) == "active"
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ class TestClassifySessionAge:
 
 class TestEstimateCacheStatus:
     def _ago(self, **kwargs) -> datetime:
-        return datetime.utcnow() - timedelta(**kwargs)
+        return datetime.now(timezone.utc) - timedelta(**kwargs)
 
     def test_recent_is_hot(self):
         assert estimate_cache_status(self._ago(seconds=30)) == "hot"

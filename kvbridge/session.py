@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
@@ -31,8 +31,20 @@ _ACTIVE_THRESHOLD = timedelta(minutes=5)
 _IDLE_THRESHOLD = timedelta(minutes=30)
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _age(last_request_time: datetime) -> timedelta:
+    # Coerce naive timestamps (e.g. from older persisted data) to UTC so the
+    # subtraction never raises on aware/naive mismatch.
+    if last_request_time.tzinfo is None:
+        last_request_time = last_request_time.replace(tzinfo=timezone.utc)
+    return _now() - last_request_time
+
+
 def classify_session_age(last_request_time: datetime) -> str:
-    age = datetime.utcnow() - last_request_time
+    age = _age(last_request_time)
     if age <= _ACTIVE_THRESHOLD:
         return "active"
     if age <= _IDLE_THRESHOLD:
@@ -41,7 +53,7 @@ def classify_session_age(last_request_time: datetime) -> str:
 
 
 def estimate_cache_status(last_request_time: datetime) -> str:
-    age = datetime.utcnow() - last_request_time
+    age = _age(last_request_time)
     if age <= _ACTIVE_THRESHOLD:
         return "hot"
     if age <= _IDLE_THRESHOLD:

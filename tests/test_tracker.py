@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,7 @@ def _make_metric(
 ) -> RequestMetric:
     return RequestMetric(
         session_id=session_id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         ttft_ms=ttft_ms,
         cache_status=cache_status,
         input_tokens=input_tokens,

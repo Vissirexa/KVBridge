@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -20,7 +20,7 @@ _SSE_DATA_PREFIX = b"data: "
 _SSE_DONE = b"data: [DONE]"
 
 
-def _has_content(chunk: bytes) -> bool:
+def _iter_sse_objects(chunk: bytes) -> Any:
     for line in chunk.split(b"\n"):
         line = line.strip()
         if not line.startswith(_SSE_DATA_PREFIX):
@@ -29,15 +29,31 @@ def _has_content(chunk: bytes) -> bool:
         if data == b"[DONE]":
             continue
         try:
-            obj = json.loads(data)
-            choices = obj.get("choices", [])
-            for choice in choices:
-                delta = choice.get("delta", {})
-                if delta.get("content"):
-                    return True
+            yield json.loads(data)
         except (json.JSONDecodeError, AttributeError):
             continue
+
+
+def _has_content(chunk: bytes) -> bool:
+    for obj in _iter_sse_objects(chunk):
+        for choice in obj.get("choices", []):
+            if choice.get("delta", {}).get("content"):
+                return True
     return False
+
+
+def _extract_usage(chunk: bytes) -> dict[str, int] | None:
+    """Return the last usage block found in an SSE chunk, if any.
+
+    OpenAI-compatible servers emit a final chunk carrying ``usage`` when
+    ``stream_options.include_usage`` is set.
+    """
+    found: dict[str, int] | None = None
+    for obj in _iter_sse_objects(chunk):
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            found = usage
+    return found
 
 
 def create_app(
@@ -84,6 +100,13 @@ def create_app(
         if req.stream:
             ttft_holder: dict[str, float | None] = {"ttft": None}
 
+            # Ask the upstream to emit a final usage chunk so we can record
+            # token counts (required for cache classification & calibration).
+            stream_payload = dict(payload)
+            stream_options = dict(stream_payload.get("stream_options") or {})
+            stream_options["include_usage"] = True
+            stream_payload["stream_options"] = stream_options
+
             async def instrumented_stream() -> Any:
                 total_start = time.monotonic()
                 input_tokens = 0
@@ -91,9 +114,13 @@ def create_app(
                 model = req.model
 
                 try:
-                    async for chunk in forward_streaming(payload, upstream_url, upstream_timeout):
+                    async for chunk in forward_streaming(stream_payload, upstream_url, upstream_timeout):
                         if ttft_holder["ttft"] is None and _has_content(chunk):
                             ttft_holder["ttft"] = (time.monotonic() - start_time) * 1000
+                        usage = _extract_usage(chunk)
+                        if usage is not None:
+                            input_tokens = usage.get("prompt_tokens", input_tokens)
+                            output_tokens = usage.get("completion_tokens", output_tokens)
                         yield chunk
                 except httpx.HTTPError as exc:
                     logger.error("Upstream error: %s", exc)
@@ -106,7 +133,7 @@ def create_app(
 
                 metric = RequestMetric(
                     session_id=session_id,
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     ttft_ms=ttft_ms,
                     cache_status=cache_status,
                     input_tokens=input_tokens,
@@ -148,7 +175,7 @@ def create_app(
 
             metric = RequestMetric(
                 session_id=session_id,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 ttft_ms=ttft_ms,
                 cache_status=cache_status,
                 input_tokens=input_tokens,
